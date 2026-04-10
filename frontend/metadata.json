@@ -1,0 +1,5 @@
+{
+  "name": "NavAbility",
+  "description": "Accessible navigation for smart wheelchairs with real-time obstacle reporting and multiple control modes.",
+  "requestFramePermissions": []
+}

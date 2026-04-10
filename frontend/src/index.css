@@ -1,0 +1,77 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-headline: "Inter", sans-serif;
+  
+  --color-primary: #005e53;
+  --color-primary-container: #00796b;
+  --color-on-primary: #ffffff;
+  --color-primary-fixed: #97f3e2;
+  --color-primary-fixed-dim: #7ad7c6;
+  
+  --color-secondary: #00639a;
+  --color-secondary-container: #51b2fe;
+  --color-on-secondary: #ffffff;
+  
+  --color-tertiary: #305a58;
+  --color-tertiary-container: #487370;
+  
+  --color-surface: #f8fafa;
+  --color-surface-dim: #d8dada;
+  --color-surface-bright: #f8fafa;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f2f4f4;
+  --color-surface-container: #eceeee;
+  --color-surface-container-high: #e6e8e8;
+  --color-surface-container-highest: #e1e3e3;
+  
+  --color-on-surface: #191c1d;
+  --color-on-surface-variant: #3e4946;
+  
+  --color-outline: #6e7a76;
+  --color-outline-variant: #bdc9c5;
+  
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #93000a;
+
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+  --radius-4xl: 2rem;
+  --radius-5xl: 2.5rem;
+}
+
+@layer base {
+  body {
+    @apply bg-surface text-on-surface font-sans antialiased;
+  }
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+}
+
+.movement-gradient {
+  background: linear-gradient(135deg, #005e53 0%, #00796b 100%);
+}
+
+.heatmap-overlay {
+  background: radial-gradient(circle at 30% 40%, rgba(34, 197, 94, 0.2) 0%, transparent 40%),
+              radial-gradient(circle at 70% 60%, rgba(239, 68, 68, 0.15) 0%, transparent 35%),
+              radial-gradient(circle at 50% 20%, rgba(234, 179, 8, 0.2) 0%, transparent 45%);
+}
+
+@keyframes scan {
+  0%, 100% { height: 10%; opacity: 0.3; }
+  50% { height: 80%; opacity: 1; }
+}
+
+.emg-bar {
+  animation: scan 1.2s ease-in-out infinite;
+}

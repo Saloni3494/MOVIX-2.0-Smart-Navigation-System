@@ -1,0 +1,7 @@
+crewai
+langchain
+langchain-groq
+python-dotenv
+flask
+flask-cors
+litellm
