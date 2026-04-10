@@ -1,34 +1,86 @@
 import { CornerUpRight, AlertTriangle, Gauge, Mic, Shield, BatteryMedium, Play, Pause, RotateCcw, Gamepad2 } from 'lucide-react';
+import { useEffect, useMemo } from 'react';
+import { CircleMarker, MapContainer, Polyline, TileLayer, useMap } from 'react-leaflet';
+
+const DEFAULT_CENTER = [18.5204, 73.8567];
+
+function FitRouteBounds({ points }) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!points || points.length === 0) {
+      return;
+    }
+
+    if (points.length === 1) {
+      map.setView(points[0], 15, { animate: true });
+      return;
+    }
+
+    map.fitBounds(points, { padding: [40, 40] });
+  }, [map, points]);
+
+  return null;
+}
 
 export default function LiveNavScreen({ onStop, navigationData }) {
   const routePoints = Array.isArray(navigationData?.route) ? navigationData.route.length : 0;
   const safetyScore = typeof navigationData?.score === 'number' ? Math.max(0, Math.min(100, Math.round(navigationData.score))) : 98;
   const aiSummary = typeof navigationData?.ai_response === 'string' ? navigationData.ai_response : '';
   const destination = navigationData?.destination || 'your destination';
+  const routeLatLng = useMemo(
+    () => (Array.isArray(navigationData?.route) ? navigationData.route.map((point) => [point[1], point[0]]) : []),
+    [navigationData?.route]
+  );
+
+  const startLatLng = useMemo(() => {
+    if (navigationData?.userLocation?.lat && navigationData?.userLocation?.lon) {
+      return [navigationData.userLocation.lat, navigationData.userLocation.lon];
+    }
+    return routeLatLng[0] || null;
+  }, [navigationData?.userLocation, routeLatLng]);
+
+  const destinationLatLng = routeLatLng.length > 0 ? routeLatLng[routeLatLng.length - 1] : null;
+  const mapCenter = startLatLng || DEFAULT_CENTER;
 
   return (
     <div className="h-full w-full relative">
-      {/* Map Background */}
       <div className="absolute inset-0 z-0">
-        <img
-          className="w-full h-full object-cover brightness-75 contrast-125 grayscale-[0.2]"
-          src="https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&q=80&w=1920"
-          alt="Live Map"
-          referrerPolicy="no-referrer"
-        />
-        {/* Path Overlay */}
-        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-          <svg className="w-full h-full opacity-60" viewBox="0 0 1000 1000">
-            <path
-              d="M 500 800 L 500 600 L 700 600 L 700 400 L 400 400"
-              fill="none"
-              stroke="#005e53"
-              strokeDasharray="16, 8"
-              strokeWidth="8"
+        <MapContainer
+          center={mapCenter}
+          zoom={15}
+          className="h-full w-full"
+          scrollWheelZoom={true}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+
+          {routeLatLng.length > 1 && (
+            <Polyline positions={routeLatLng} pathOptions={{ color: '#005e53', weight: 7, opacity: 0.9 }} />
+          )}
+
+          {startLatLng && (
+            <CircleMarker
+              center={startLatLng}
+              radius={8}
+              pathOptions={{ color: '#0ea5e9', fillColor: '#0ea5e9', fillOpacity: 0.95 }}
             />
-            <circle cx="400" cy="400" fill="#005e53" r="10" />
-          </svg>
-        </div>
+          )}
+
+          {destinationLatLng && (
+            <CircleMarker
+              center={destinationLatLng}
+              radius={8}
+              pathOptions={{ color: '#f97316', fillColor: '#f97316', fillOpacity: 0.95 }}
+            />
+          )}
+
+          <FitRouteBounds points={routeLatLng} />
+        </MapContainer>
+
+        <div className="pointer-events-none absolute inset-0 bg-black/10" />
       </div>
 
       {/* Overlays */}
@@ -61,7 +113,6 @@ export default function LiveNavScreen({ onStop, navigationData }) {
           </div>
         </div>
 
-        {/* Dashboard Controls */}
         <div className="mt-auto grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4 pointer-events-auto pb-4 pt-8">
           {/* Speed */}
           <div className="glass-panel p-4 sm:p-6 rounded-2xl flex items-center justify-between shadow-sm">
