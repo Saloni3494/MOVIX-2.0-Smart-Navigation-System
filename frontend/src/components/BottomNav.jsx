@@ -21,7 +21,7 @@ export default function BottomNav({ currentScreen, onScreenChange, user }) {
           onClick={() => onScreenChange(item.id)}
           className={cn(
             "flex flex-col items-center justify-center rounded-2xl px-4 py-1 transition-all active:scale-95",
-            currentScreen === item.id
+            (currentScreen === item.id || (item.id === 'map' && currentScreen === 'live'))
               ? "bg-teal-50 text-teal-800"
               : "text-slate-500 hover:text-teal-600"
           )}

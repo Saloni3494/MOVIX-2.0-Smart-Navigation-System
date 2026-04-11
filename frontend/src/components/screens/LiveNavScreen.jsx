@@ -13,10 +13,12 @@ import {
   Flag,
   Volume2,
   VolumeX,
+  CheckCircle2,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { CircleMarker, MapContainer, Polyline, TileLayer, useMap } from 'react-leaflet';
-import { checkAndReroute, updateLiveLocation } from '../../lib/api.js';
+import { checkAndReroute, updateLiveLocation, detectObstacles, submitObstacleReport } from '../../lib/api.js';
+import WheelchairSimulator from './WheelchairSimulator.jsx';
 
 const DEFAULT_CENTER = [18.5204, 73.8567];
 
@@ -175,6 +177,7 @@ export default function LiveNavScreen({ onStop, navigationData, authToken, isAut
   const [isPaused, setIsPaused] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
   const [rerouteStatus, setRerouteStatus] = useState('');
+  const [aiReportStatus, setAiReportStatus] = useState('');
 
   const safetyScore =
     typeof navigationData?.score === 'number' ? Math.max(0, Math.min(100, Math.round(navigationData.score))) : 98;
@@ -222,19 +225,11 @@ export default function LiveNavScreen({ onStop, navigationData, authToken, isAut
   const destinationLatLng = routeLatLng.length > 0 ? routeLatLng[routeLatLng.length - 1] : null;
   const mapCenter = startLatLng || DEFAULT_CENTER;
 
-  const userPointForTracking = useMemo(() => {
-    if (!routeLatLng.length) {
-      return null;
-    }
-    const pointIndex = Math.min(routeLatLng.length - 1, Math.max(0, currentStepIndex));
-    const point = routeLatLng[pointIndex];
-    return [point[1], point[0]];
-  }, [currentStepIndex, routeLatLng]);
+  // Track the actual interpolated user point from the simulator instead of jumping
+  const [userPointForTracking, setUserPointForTracking] = useState(startLatLng || DEFAULT_CENTER);
 
   const destinationPointForTracking = useMemo(() => {
-    if (!destinationLatLng) {
-      return null;
-    }
+    if (!destinationLatLng) return null;
     return [destinationLatLng[1], destinationLatLng[0]];
   }, [destinationLatLng]);
 
@@ -243,17 +238,38 @@ export default function LiveNavScreen({ onStop, navigationData, authToken, isAut
     setIsPaused(false);
   }, [navigationData?.route, navigationData?.destination]);
 
-  useEffect(() => {
-    if (isPaused || guidanceSteps.length <= 1 || currentStepIndex >= guidanceSteps.length - 1) {
-      return undefined;
+  const handleSimulatorUpdate = async (evt) => {
+    if (evt.position) setUserPointForTracking(evt.position);
+    if (evt.index !== undefined) {
+      const calculatedStepIndex = Math.min(Math.floor(evt.index / Math.max(1, Math.floor(routeLatLng.length / guidanceSteps.length))), guidanceSteps.length - 1);
+      if (calculatedStepIndex !== currentStepIndex) setCurrentStepIndex(calculatedStepIndex);
+    }
+    if (evt.reachedEnd) {
+      setIsPaused(true);
+      return;
     }
 
-    const timer = window.setInterval(() => {
-      setCurrentStepIndex((index) => Math.min(index + 1, guidanceSteps.length - 1));
-    }, 5000);
-
-    return () => window.clearInterval(timer);
-  }, [currentStepIndex, guidanceSteps.length, isPaused]);
+    // AI periodic detection checks
+    if (isAuthenticated && authToken && evt.position) {
+      try {
+        const data = await detectObstacles({ currentLocation: evt.position, captureFrames: true }, authToken);
+        if (data?.obstacles && data.obstacles.length > 0) {
+          const obs = data.obstacles[0];
+          await submitObstacleReport({
+            layer: obs.type || 'temporary',
+            severity: obs.severity || 5,
+            description: `Auto-reported ${obs.type} by AI detector.`,
+            coordinates: evt.position,
+            imageUrl: null
+          }, authToken);
+          setAiReportStatus(`AI automated report submitted for ${obs.type}!`);
+          setTimeout(() => setAiReportStatus(''), 8000);
+        }
+      } catch (e) {
+        // ignore errors to avoid spamming the user
+      }
+    }
+  };
 
   useEffect(() => {
     if (!voiceEnabled || !currentStep || typeof window === 'undefined' || !window.speechSynthesis) {
@@ -312,25 +328,24 @@ export default function LiveNavScreen({ onStop, navigationData, authToken, isAut
   const progressPercent = guidanceSteps.length > 1 ? (currentStepIndex / (guidanceSteps.length - 1)) * 100 : 0;
 
   return (
-    <div className="h-full w-full flex flex-col overflow-y-auto no-scrollbar bg-surface">
-      <div className="relative h-[42vh] min-h-[260px] sm:h-[48vh] w-full">
-        <MapContainer center={mapCenter} zoom={15} className="h-full w-full" scrollWheelZoom={true}>
+    <div className="h-full w-full flex flex-col bg-surface overflow-hidden">
+      {/* Top Half: Dedicated Map Layer */}
+      <div className="relative h-[45vh] sm:h-[50vh] w-full shrink-0 border-b border-outline-variant/30">
+        <MapContainer center={mapCenter} zoom={16} className="h-full w-full" zoomControl={false} scrollWheelZoom={true}>
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
           />
 
           {routeLatLng.length > 1 && (
-            <Polyline positions={routeLatLng} pathOptions={{ color: '#1877f2', weight: 8, opacity: 0.9 }} />
+            <Polyline positions={routeLatLng} pathOptions={{ color: '#3b82f6', weight: 8, opacity: 0.9, lineCap: 'round', lineJoin: 'round' }} />
           )}
 
-          {startLatLng && (
-            <CircleMarker
-              center={startLatLng}
-              radius={8}
-              pathOptions={{ color: '#0ea5e9', fillColor: '#0ea5e9', fillOpacity: 0.95 }}
-            />
-          )}
+          <WheelchairSimulator 
+            routeLatLng={routeLatLng} 
+            isPaused={isPaused} 
+            onPositionUpdate={handleSimulatorUpdate} 
+          />
 
           {destinationLatLng && (
             <CircleMarker
@@ -340,193 +355,127 @@ export default function LiveNavScreen({ onStop, navigationData, authToken, isAut
             />
           )}
 
-          <FitRouteBounds points={routeLatLng} />
+          <div className="absolute right-4 top-4 z-[400]">
+             <button
+                onClick={onReportIssue}
+                className="w-12 h-12 rounded-full bg-error text-on-error hover:opacity-90 shadow-xl flex items-center justify-center transition-all cursor-pointer"
+                aria-label="Report manually"
+              >
+                <Flag className="w-5 h-5" />
+              </button>
+          </div>
         </MapContainer>
-
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-black/20" />
-
-        <button
-          onClick={onReportIssue}
-          className="absolute right-4 top-4 z-20 inline-flex items-center gap-2 rounded-2xl bg-error text-on-error px-3 py-2 shadow-lg hover:opacity-95 active:scale-95 transition-all"
-          aria-label="Report obstacle during navigation"
-        >
-          <Flag className="w-4 h-4" />
-          <span className="text-xs font-black uppercase tracking-wider">Report</span>
-        </button>
       </div>
 
-      <div className="w-full p-3 sm:p-4 flex flex-col gap-3 sm:gap-4">
-        <div className="w-full max-w-5xl mx-auto">
-          <div className="bg-[#1a73e8] text-white rounded-2xl shadow-xl px-4 py-4 sm:px-6 sm:py-5">
-            <div className="flex items-center gap-3 sm:gap-4">
-              <div className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl bg-white/20 flex items-center justify-center flex-shrink-0">
-                <InstructionIcon className="w-7 h-7 sm:w-8 sm:h-8" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-white/80">Next instruction</p>
-                <h2 className="text-lg sm:text-2xl font-extrabold leading-tight truncate sm:whitespace-normal">{currentStep?.instruction}</h2>
-                <p className="text-sm sm:text-base text-white/90">In {currentStep?.distanceText} - ETA {etaMinutes} min</p>
-              </div>
-              <button
-                onClick={() => setVoiceEnabled((value) => !value)}
-                className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl bg-white/20 hover:bg-white/30 transition flex items-center justify-center"
-                aria-label="Toggle voice guidance"
-              >
-                {voiceEnabled ? <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" /> : <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" />}
-              </button>
-            </div>
-            <div className="mt-4 h-2 w-full rounded-full bg-white/25 overflow-hidden">
-              <div className="h-full rounded-full bg-white transition-all duration-500" style={{ width: `${progressPercent}%` }} />
-            </div>
-          </div>
-        </div>
-
-        <div className="w-full max-w-4xl mx-auto">
-          <div className="glass-panel rounded-2xl shadow-lg p-3 sm:p-4 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-widest text-outline">Assistant says</p>
-              <p className="text-sm sm:text-base font-semibold text-on-surface truncate sm:whitespace-normal">
-                {aiSummary || `Continue on the safest accessible route to ${destination}.`}
-              </p>
-              {nextStep && <p className="text-xs sm:text-sm text-outline mt-1">Then: {nextStep.instruction}</p>}
-            </div>
-            <div className="flex items-center gap-2 text-outline flex-shrink-0">
-              <Navigation className="w-5 h-5" />
-              <span className="text-xs sm:text-sm font-bold">{formatDistance(remainingDistanceMeters || totalDistanceMeters)} left</span>
-            </div>
-          </div>
-        </div>
-
-        {!isAuthenticated && (
-          <div className="w-full max-w-4xl mx-auto">
-            <div className="bg-error-container text-on-error-container rounded-2xl p-3 text-sm font-semibold flex items-center justify-between gap-3">
-              Login required for live auto-rerouting checks.
-              <button onClick={onRequireAuth} className="bg-error text-on-error px-3 py-2 rounded-xl text-xs font-bold">Open Login</button>
-            </div>
+      {/* Bottom Half: Non-overlapping scrollable content */}
+      <div className="flex-1 overflow-y-auto w-full p-4 sm:p-6 flex flex-col gap-4">
+            
+        {/* Dynamic Headers & Alerts */}
+        {aiReportStatus && (
+          <div className="w-full max-w-4xl mx-auto bg-[#10b981] text-white rounded-xl shadow border border-[#059669] p-3 flex items-center gap-3 shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+            <p className="text-sm font-bold tracking-wide">{aiReportStatus}</p>
           </div>
         )}
+
+        {/* Turn-by-Turn Header */}
+        <div className="w-full max-w-4xl mx-auto bg-[#1a73e8] text-white rounded-3xl shadow-lg px-5 py-5 relative overflow-hidden shrink-0">
+          <div className="absolute top-0 inset-x-0 h-1 bg-white/20">
+            <div className="h-full bg-white transition-all duration-300" style={{ width: `${progressPercent}%` }} />
+          </div>
+          <div className="flex items-center gap-4 relative z-10">
+            <div className="w-14 h-14 rounded-2xl bg-white/20 shadow-inner flex items-center justify-center shrink-0">
+              <InstructionIcon className="w-8 h-8" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold uppercase tracking-wider text-white/70 mb-0.5">Next step {currentStepIndex + 1}/{guidanceSteps.length}</p>
+              <h2 className="text-xl md:text-2xl font-extrabold leading-tight text-white/100 truncate">{currentStep?.instruction}</h2>
+              <p className="text-sm md:text-[15px] font-medium text-white/90 mt-0.5">In {currentStep?.distanceText} — ETA {etaMinutes} min</p>
+            </div>
+            <button
+              onClick={() => setVoiceEnabled((value) => !value)}
+              className="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 transition flex items-center justify-center shadow cursor-pointer"
+              aria-label="Toggle voice guidance"
+            >
+              {voiceEnabled ? <Volume2 className="w-5 h-5" /> : <VolumeX className="w-5 h-5" />}
+            </button>
+          </div>
+        </div>
 
         {rerouteStatus && (
-          <div className="w-full max-w-4xl mx-auto">
-            <div className="bg-primary/10 text-primary rounded-2xl p-3 text-sm font-semibold border border-primary/30">
-              {rerouteStatus}
+          <div className="w-full max-w-4xl mx-auto bg-primary-container text-on-primary-container rounded-2xl p-3 text-sm font-semibold border border-primary/20 shadow-lg shrink-0">
+            {rerouteStatus}
+          </div>
+        )}
+        
+        {!isAuthenticated && (
+          <div className="w-full max-w-4xl mx-auto bg-error-container text-on-error-container rounded-2xl p-3 text-sm font-semibold flex items-center justify-between gap-3 shadow-lg shrink-0">
+            Login required for live auto-rerouting.
+            <button onClick={onRequireAuth} className="bg-error text-on-error px-3 py-1.5 rounded-xl text-xs font-bold shadow cursor-pointer">Login</button>
+          </div>
+        )}
+
+        {/* Assistant Information */}
+        {aiSummary && (
+          <div className="w-full max-w-4xl mx-auto glass-panel !bg-surface-container-low/95 border border-outline-variant/30 text-on-surface shadow p-4 rounded-[1.5rem] flex items-center gap-4 shrink-0">
+            <div className="w-10 h-10 rounded-full bg-error-container text-on-error-container flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <p className="font-bold text-sm tracking-wide uppercase text-outline">Assistant Detection</p>
+              <p className="text-xs sm:text-sm font-medium opacity-90">{aiSummary}</p>
             </div>
           </div>
         )}
 
-        <div className="w-full max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-          <div className="glass-panel p-4 rounded-2xl shadow-sm">
-            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-outline">Live status</p>
-            <div className="mt-2 flex items-end justify-between">
-              <div>
-                <p className="text-3xl sm:text-4xl font-black text-on-surface">4.2</p>
-                <p className="text-sm text-outline font-medium">km/h</p>
+        {/* Master Details & Controls Footer */}
+        <div className="w-full max-w-4xl mx-auto mt-2 glass-panel border border-outline-variant/50 shadow-md rounded-[2rem] p-5 flex flex-col gap-5 shrink-0 mb-4">
+          <div className="flex items-center justify-between px-2">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-outline mb-1">Metrics</p>
+              <div className="flex items-end gap-1">
+                <p className="text-4xl font-black leading-none">{formatDistance(remainingDistanceMeters || totalDistanceMeters)}</p>
+                <p className="text-base font-semibold text-outline pb-1">left</p>
               </div>
-              <div className="text-right">
-                <p className="text-2xl sm:text-3xl font-black text-primary">{safetyScore}%</p>
-                <p className="text-[10px] sm:text-xs text-outline font-semibold uppercase">Safety</p>
-              </div>
+            </div>
+            
+            <div className="text-right">
+              <p className="text-xs font-bold uppercase tracking-wider text-outline mb-1">Safety</p>
+              <p className="text-4xl font-black text-primary leading-none">{safetyScore}%</p>
             </div>
           </div>
 
-          <div className="glass-panel p-4 rounded-2xl shadow-sm flex items-center justify-around">
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-9 h-9 rounded-full bg-primary-fixed flex items-center justify-center text-on-primary-fixed">
-                <Mic className="w-4 h-4" />
-              </div>
-              <span className="text-[10px] font-bold text-primary uppercase">Voice</span>
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-9 h-9 rounded-full bg-secondary-fixed flex items-center justify-center text-on-secondary-fixed">
-                <Shield className="w-4 h-4" />
-              </div>
-              <span className="text-[10px] font-bold text-secondary uppercase">Safe Mode</span>
-            </div>
-            <div className="flex flex-col items-center gap-1">
-              <div className="w-9 h-9 rounded-full bg-tertiary-fixed flex items-center justify-center text-on-tertiary-fixed">
-                <BatteryMedium className="w-4 h-4" />
-              </div>
-              <span className="text-[10px] font-bold text-tertiary uppercase">Battery</span>
-            </div>
-          </div>
+          <div className="h-px w-full bg-outline-variant/30"></div>
 
-          <div className="glass-panel p-4 rounded-2xl shadow-sm">
-            <p className="text-[10px] sm:text-xs font-bold uppercase tracking-widest text-outline mb-2">Navigation controls</p>
-            <div className="flex items-center justify-around">
-              <button
-                onClick={() => {
-                  if (currentStepIndex >= guidanceSteps.length - 1) {
-                    setCurrentStepIndex(0);
-                  }
-                  setIsPaused(false);
-                }}
-                className="w-12 h-12 rounded-full bg-primary text-on-primary flex items-center justify-center hover:shadow-lg active:scale-90 transition-all"
-                aria-label="Resume navigation"
-              >
-                <Play className="w-6 h-6" />
-              </button>
-              <button
-                onClick={() => setIsPaused(true)}
-                className="w-12 h-12 rounded-full bg-primary/20 text-primary flex items-center justify-center hover:shadow-lg active:scale-90 transition-all"
-                aria-label="Pause navigation"
-              >
-                <Pause className="w-6 h-6" />
-              </button>
+          <div className="flex items-center justify-between">
               <button
                 onClick={onStop}
-                className="w-12 h-12 rounded-full bg-error text-on-error flex items-center justify-center hover:shadow-lg active:scale-90 transition-all"
-                aria-label="Stop navigation"
+                className="h-14 px-6 rounded-full bg-error-container text-on-error-container font-extrabold flex items-center gap-2 hover:bg-error hover:text-on-error transition-colors shadow-sm cursor-pointer"
               >
-                <RotateCcw className="w-6 h-6" />
+                <RotateCcw className="w-5 h-5" />
+                Exit Nav
               </button>
-            </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setIsPaused(true)}
+                  className="w-14 h-14 rounded-full bg-surface-container-highest text-on-surface flex items-center justify-center hover:bg-surface-variant transition shadow-inner cursor-pointer"
+                >
+                  <Pause className="w-6 h-6" />
+                </button>
+                <button
+                  onClick={() => {
+                    if (currentStepIndex >= guidanceSteps.length - 1) setCurrentStepIndex(0);
+                    setIsPaused(false);
+                  }}
+                  className="w-16 h-16 rounded-full bg-primary text-on-primary shadow-lg flex items-center justify-center hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Navigation className="w-7 h-7" />
+                </button>
+              </div>
           </div>
         </div>
 
-        <div className="w-full max-w-5xl mx-auto">
-          <div className="glass-panel rounded-2xl p-3 sm:p-4 shadow-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs sm:text-sm font-black uppercase tracking-wider text-outline">Step by step</p>
-              <p className="text-xs sm:text-sm font-semibold text-outline">{currentStepIndex + 1}/{guidanceSteps.length}</p>
-            </div>
-
-            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2">
-              {guidanceSteps.map((step, index) => {
-                const StepIcon = getInstructionIcon(step.type);
-                const isActive = index === currentStepIndex;
-
-                return (
-                  <div
-                    key={step.id}
-                    className={`rounded-xl p-3 border transition-colors ${
-                      isActive
-                        ? 'border-primary bg-primary/10'
-                        : 'border-outline-variant/40 bg-surface-container-lowest/80'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <StepIcon className={`w-4 h-4 ${isActive ? 'text-primary' : 'text-outline'}`} />
-                      <p className={`text-sm font-semibold ${isActive ? 'text-primary' : 'text-on-surface'}`}>{step.instruction}</p>
-                    </div>
-                    <p className="text-xs text-outline mt-1">in {step.distanceText}</p>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        <div className="w-full max-w-4xl mx-auto pb-3 sm:pb-4">
-          <div className="bg-error-container/90 backdrop-blur-md text-on-error-container p-3 sm:p-4 rounded-2xl shadow-lg border-l-4 border-error flex items-center gap-3 sm:gap-4">
-            <AlertTriangle className="text-error w-5 h-5 sm:w-6 sm:h-6 flex-shrink-0" />
-            <div>
-              <p className="font-bold text-sm sm:text-base">Obstacle intelligence</p>
-              <p className="text-xs sm:text-sm opacity-90">
-                {aiSummary || 'No immediate hazard flagged. Assistant will announce updates if route conditions change.'}
-              </p>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

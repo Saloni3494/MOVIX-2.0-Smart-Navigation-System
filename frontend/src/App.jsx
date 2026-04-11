@@ -66,7 +66,12 @@ export default function App() {
   }, []);
 
   const handleScreenChange = (screen) => {
-    setCurrentScreen(screen);
+    if (screen === 'map' && navigationData !== null) {
+      setCurrentScreen('live');
+    } else {
+      setCurrentScreen(screen);
+    }
+    
     if (isMobile) {
       setIsSidebarOpen(false);
     }

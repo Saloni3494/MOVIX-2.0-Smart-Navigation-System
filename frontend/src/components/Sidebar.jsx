@@ -39,7 +39,7 @@ export default function Sidebar({ currentScreen, onScreenChange, isOpen, user })
             onClick={() => onScreenChange(item.id)}
             className={cn(
               "flex items-center gap-4 p-4 rounded-2xl font-bold transition-all duration-200 text-left",
-              currentScreen === item.id
+              (currentScreen === item.id || (item.id === 'map' && currentScreen === 'live'))
                 ? "bg-teal-100 text-teal-900"
                 : "text-slate-600 hover:bg-slate-200"
             )}
