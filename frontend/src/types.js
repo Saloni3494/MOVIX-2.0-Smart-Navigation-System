@@ -1,7 +1,7 @@
 // Type definitions as JSDoc comments for reference
 
 /**
- * @typedef {'map' | 'modes' | 'report' | 'live'} Screen
+ * @typedef {'map' | 'modes' | 'report' | 'live' | 'profile'} Screen
  */
 
 /**

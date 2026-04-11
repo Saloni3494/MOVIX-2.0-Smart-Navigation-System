@@ -1,13 +1,17 @@
 import { Map as MapIcon, Gamepad2, AlertCircle, User } from 'lucide-react';
 import { cn } from '../lib/utils.js';
 
-export default function BottomNav({ currentScreen, onScreenChange }) {
+export default function BottomNav({ currentScreen, onScreenChange, user }) {
   const navItems = [
     { id: 'map', label: 'Map', icon: MapIcon },
     { id: 'modes', label: 'Modes', icon: Gamepad2 },
     { id: 'report', label: 'Report', icon: AlertCircle },
     { id: 'profile', label: 'User', icon: User },
   ];
+
+  if (user?.role === 'admin') {
+    navItems.splice(3, 0, { id: 'admin', label: 'Admin', icon: MapIcon });
+  }
 
   return (
     <nav className="fixed bottom-0 w-full z-50 flex justify-around items-center px-4 pb-safe h-20 md:hidden bg-white shadow-[0px_-4px_16px_rgba(0,0,0,0.04)] border-t border-slate-100">

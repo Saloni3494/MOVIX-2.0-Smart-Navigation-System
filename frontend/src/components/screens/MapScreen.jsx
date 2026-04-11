@@ -1,6 +1,7 @@
 import { Search, Navigation, Verified, ShieldCheck, LocateFixed } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { CircleMarker, MapContainer, Polyline, TileLayer, useMap } from 'react-leaflet';
+import { fetchAccessibleRoutes, geocodeDestination } from '../../lib/api.js';
 
 const DEFAULT_CENTER = [18.5204, 73.8567];
 
@@ -16,47 +17,45 @@ function RecenterMap({ center }) {
   return null;
 }
 
-function normalizeRouteOptions(data, destination) {
-  if (Array.isArray(data?.route_options) && data.route_options.length > 0) {
-    return data.route_options.map((route, index) => ({
-      id: `${index + 1}`,
-      name: route.name || (index === 0 ? 'Safest Route' : `Alternative Route ${index}`),
-      destination: route.destination || destination,
-      time: typeof route.time === 'number' ? route.time : Math.max(1, Math.round((route.duration_s || 0) / 60)),
-      accessibility:
-        typeof route.accessibility === 'number' ? route.accessibility : (typeof route.score === 'number' ? route.score : 80),
-      safety: route.safety || 'Moderate',
-      distance: route.distance || 'N/A',
-      type: route.type || (index === 0 ? 'recommended' : (index === 1 ? 'fastest' : 'direct')),
-      route: Array.isArray(route.route) ? route.route : [],
-      score: typeof route.score === 'number' ? route.score : 80,
-      ai_response: route.ai_response,
-    }));
+function scoreToSafety(score) {
+  if (score >= 85) {
+    return 'Optimal';
   }
-
-  if (Array.isArray(data?.route) && data.route.length > 0) {
-    const fallbackScore = typeof data?.score === 'number' ? data.score : 80;
-    return [
-      {
-        id: '1',
-        name: 'Safest Route',
-        destination,
-        time: 10,
-        accessibility: Math.max(0, Math.min(100, Math.round(fallbackScore))),
-        safety: fallbackScore >= 85 ? 'Optimal' : (fallbackScore >= 70 ? 'Moderate' : 'Caution'),
-        distance: 'N/A',
-        type: 'recommended',
-        route: data.route,
-        score: fallbackScore,
-        ai_response: data?.ai_response,
-      },
-    ];
+  if (score >= 70) {
+    return 'Moderate';
   }
-
-  return [];
+  return 'Caution';
 }
 
-export default function MapScreen({ onStartNavigation }) {
+function normalizeRouteOptions(data, destination) {
+  const routes = [data?.safestPath, ...(Array.isArray(data?.alternativeRoutes) ? data.alternativeRoutes : [])].filter(Boolean);
+
+  return routes.map((entry, index) => {
+    const distanceM = entry?.route?.distance_m || 0;
+    const durationS = entry?.route?.duration_s || 0;
+    const score = Math.max(0, Math.min(100, Math.round(entry?.accessibilityScore || 70)));
+    const distanceText = distanceM > 0 ? `${(distanceM / 1000).toFixed(1)} km` : 'N/A';
+
+    return {
+      id: `${index + 1}`,
+      name: index === 0 ? 'Safest Route' : index === 1 ? 'Alternative Route A' : `Alternative Route ${index}`,
+      destination,
+      time: Math.max(1, Math.round(durationS / 60)),
+      accessibility: score,
+      safety: scoreToSafety(score),
+      distance: distanceText,
+      type: index === 0 ? 'recommended' : index === 1 ? 'fastest' : 'direct',
+      route: entry?.route?.coordinates || [],
+      score,
+      encounteredHazards: Array.isArray(entry?.encounteredHazards) ? entry.encounteredHazards : [],
+      ai_response: index === 0
+        ? `Selected safest route after analyzing ${Array.isArray(entry?.encounteredHazards) ? entry.encounteredHazards.length : 0} hazards.`
+        : 'Alternative route generated with accessibility constraints.',
+    };
+  });
+}
+
+export default function MapScreen({ onStartNavigation, authToken, user, onRequireAuth }) {
   const [destination, setDestination] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -138,6 +137,12 @@ export default function MapScreen({ onStartNavigation }) {
       return;
     }
 
+    if (!authToken) {
+      onRequireAuth();
+      setError('Please login first to request accessible routes.');
+      return;
+    }
+
     const finalDestination = destination.trim();
     if (!finalDestination) {
       setError('Please enter a destination first.');
@@ -151,20 +156,14 @@ export default function MapScreen({ onStartNavigation }) {
       const location = currentLocation || (await getUserLocation());
       setCurrentLocation(location);
 
-      const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || 'http://localhost:5000';
-      const response = await fetch(`${apiBaseUrl}/route`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          destination: finalDestination,
-          userLocation: [location.lon, location.lat],
-        }),
-      });
-
-      const data = await response.json();
-      if (!response.ok || data.error) {
-        throw new Error(data.error || 'Unable to create route right now.');
-      }
+      const destinationGeo = await geocodeDestination(finalDestination);
+      const data = await fetchAccessibleRoutes(
+        {
+          source: [location.lon, location.lat],
+          destination: destinationGeo.coordinates,
+        },
+        authToken
+      );
 
       const normalizedRoutes = normalizeRouteOptions(data, finalDestination);
       if (normalizedRoutes.length === 0) {
@@ -190,12 +189,13 @@ export default function MapScreen({ onStartNavigation }) {
 
     onStartNavigation({
       destination: lastSearchDestination || destination.trim() || 'your destination',
-      userLocation: currentLocation,
+      userLocation: currentLocation || user?.currentLocation,
       route: routeOption.route || [],
       score: typeof routeOption.score === 'number' ? routeOption.score : routeOption.accessibility,
       ai_response: routeOption.ai_response || 'Navigation started on selected route.',
       selectedRouteType: routeOption.type,
       route_options: routeOptions,
+      encounteredHazards: routeOption.encounteredHazards || [],
     });
   };
 

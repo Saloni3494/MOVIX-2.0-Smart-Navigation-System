@@ -1,18 +1,118 @@
 import { Signal, Circle, Ban, Construction, Camera, CheckCircle, XCircle, Check } from 'lucide-react';
 import { useState } from 'react';
 import { cn } from '../../lib/utils.js';
+import { geocodeDestination, submitObstacleReport } from '../../lib/api.js';
 
-export default function ReportScreen() {
+export default function ReportScreen({ authToken, isAuthenticated, onRequireAuth }) {
   const [selectedObstacle, setSelectedObstacle] = useState(null);
   const [isPassable, setIsPassable] = useState(null);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [locationMode, setLocationMode] = useState('gps');
+  const [manualLocation, setManualLocation] = useState('');
+  const [notes, setNotes] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
   const obstacles = [
     { id: 'stairs', label: 'Stairs', icon: Signal },
     { id: 'pothole', label: 'Pothole', icon: Circle },
-    { id: 'blocked', label: 'Blocked', icon: Ban },
+    { id: 'narrow_path', label: 'Blocked / Narrow', icon: Ban },
     { id: 'construction', label: 'Construction', icon: Construction },
   ];
+
+  const submitReport = async () => {
+    if (!isAuthenticated || !authToken) {
+      onRequireAuth();
+      setError('Please login to submit a report.');
+      return;
+    }
+    if (!selectedObstacle) {
+      setError('Please choose an obstacle type.');
+      return;
+    }
+    if (isPassable === null) {
+      setError('Please mark if the segment is accessible or not.');
+      return;
+    }
+    if (locationMode === 'manual' && !manualLocation.trim()) {
+      setError('Please enter a manual location or switch back to GPS.');
+      return;
+    }
+
+    setError('');
+    setIsSubmitting(true);
+
+    try {
+      const location = await new Promise((resolve, reject) => {
+        if (locationMode === 'manual') {
+          geocodeDestination(manualLocation.trim())
+            .then((locationData) => {
+              resolve({
+                type: 'Point',
+                coordinates: locationData.coordinates,
+              });
+            })
+            .catch(reject);
+          return;
+        }
+
+        if (!navigator.geolocation) {
+          reject(new Error('Location access is required for reporting obstacles. You can also enter a location manually.'));
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            resolve({
+              type: 'Point',
+              coordinates: [position.coords.longitude, position.coords.latitude],
+            });
+          },
+          async () => {
+            if (!manualLocation.trim()) {
+              reject(new Error('Location access is required for reporting obstacles. You can also enter a location manually.'));
+              return;
+            }
+
+            try {
+              const locationData = await geocodeDestination(manualLocation.trim());
+              resolve({
+                type: 'Point',
+                coordinates: locationData.coordinates,
+              });
+            } catch (geocodeError) {
+              reject(geocodeError);
+            }
+          },
+          { enableHighAccuracy: true, timeout: 12000 }
+        );
+      });
+
+      await submitObstacleReport(
+        {
+          obstacleType: selectedObstacle,
+          location,
+          severity: isPassable ? 'medium' : 'high',
+          imageUrl: imageUrl || undefined,
+          notes: notes || undefined,
+        },
+        authToken
+      );
+
+      setIsSubmitted(true);
+      setSelectedObstacle(null);
+      setIsPassable(null);
+      setLocationMode('gps');
+      setManualLocation('');
+      setNotes('');
+      setImageUrl('');
+    } catch (err) {
+      setError(err.message || 'Failed to submit report.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (isSubmitted) {
     return (
@@ -21,7 +121,7 @@ export default function ReportScreen() {
           <Check className="w-10 h-10" />
         </div>
         <h3 className="text-2xl font-black text-on-surface mb-2">Report Received!</h3>
-        <p className="text-on-surface-variant font-medium">You just helped 14 nearby users avoid this obstacle. Thank you!</p>
+        <p className="text-on-surface-variant font-medium">Thanks. Your report is now live in route safety scoring for nearby users.</p>
         <button
           onClick={() => setIsSubmitted(false)}
           className="mt-8 text-primary font-bold hover:underline"
@@ -88,6 +188,60 @@ export default function ReportScreen() {
             <p className="text-outline text-xs sm:text-sm">Accuracy: 3 meters</p>
           </div>
         </div>
+
+        <div className="rounded-3xl bg-surface-container-lowest p-4 sm:p-5 shadow-[0px_12px_32px_rgba(25,28,29,0.06)]">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <h3 className="font-bold text-sm sm:text-base">Location mode</h3>
+            <div className="bg-surface-container flex rounded-2xl p-1">
+              <button
+                onClick={() => setLocationMode('gps')}
+                className={cn(
+                  'px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all',
+                  locationMode === 'gps' ? 'bg-primary text-on-primary' : 'text-outline'
+                )}
+              >
+                Use GPS
+              </button>
+              <button
+                onClick={() => setLocationMode('manual')}
+                className={cn(
+                  'px-3 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all',
+                  locationMode === 'manual' ? 'bg-primary text-on-primary' : 'text-outline'
+                )}
+              >
+                Manual
+              </button>
+            </div>
+          </div>
+
+          {locationMode === 'manual' && (
+            <div className="space-y-3">
+              <input
+                className="w-full bg-surface-container rounded-2xl px-4 py-3 outline-none"
+                placeholder="Enter location manually (example: 4th & King St intersection)"
+                value={manualLocation}
+                onChange={(e) => setManualLocation(e.target.value)}
+              />
+              <p className="text-xs text-outline font-medium">
+                We will geocode this location and store it as a map point for crowd safety scoring.
+              </p>
+            </div>
+          )}
+        </div>
+
+        <input
+          className="w-full bg-surface-container-lowest rounded-2xl px-4 py-3 outline-none"
+          placeholder="Optional image URL (proof)"
+          value={imageUrl}
+          onChange={(e) => setImageUrl(e.target.value)}
+        />
+
+        <textarea
+          className="w-full bg-surface-container-lowest rounded-2xl px-4 py-3 outline-none min-h-24 resize-y"
+          placeholder="Optional notes for the accessibility team"
+          value={notes}
+          onChange={(e) => setNotes(e.target.value)}
+        />
       </div>
 
       <div className="bg-surface-container-highest/50 rounded-3xl sm:rounded-[2.5rem] p-5 sm:p-6 mb-8 sm:mb-10">
@@ -120,11 +274,14 @@ export default function ReportScreen() {
         </div>
       </div>
 
+      {error && <p className="mb-4 text-sm font-semibold text-error">{error}</p>}
+
       <button
-        onClick={() => setIsSubmitted(true)}
+        onClick={submitReport}
+        disabled={isSubmitting}
         className="w-full movement-gradient py-5 sm:py-6 rounded-2xl sm:rounded-[2rem] text-on-primary text-lg sm:text-xl font-black tracking-tight shadow-xl shadow-primary/20 active:scale-[0.98] transition-transform"
       >
-        Submit Report
+        {isSubmitting ? 'Submitting...' : 'Submit Report'}
       </button>
     </div>
   );

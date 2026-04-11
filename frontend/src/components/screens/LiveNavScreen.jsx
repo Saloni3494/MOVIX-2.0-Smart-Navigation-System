@@ -10,11 +10,13 @@ import {
   Play,
   RotateCcw,
   Shield,
+  Flag,
   Volume2,
   VolumeX,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { CircleMarker, MapContainer, Polyline, TileLayer, useMap } from 'react-leaflet';
+import { checkAndReroute, updateLiveLocation } from '../../lib/api.js';
 
 const DEFAULT_CENTER = [18.5204, 73.8567];
 
@@ -168,10 +170,11 @@ function buildGuidanceSteps(routeLatLng, destination) {
   return steps;
 }
 
-export default function LiveNavScreen({ onStop, navigationData }) {
+export default function LiveNavScreen({ onStop, navigationData, authToken, isAuthenticated, onRequireAuth, onReportIssue }) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const [voiceEnabled, setVoiceEnabled] = useState(true);
+  const [rerouteStatus, setRerouteStatus] = useState('');
 
   const safetyScore =
     typeof navigationData?.score === 'number' ? Math.max(0, Math.min(100, Math.round(navigationData.score))) : 98;
@@ -219,6 +222,22 @@ export default function LiveNavScreen({ onStop, navigationData }) {
   const destinationLatLng = routeLatLng.length > 0 ? routeLatLng[routeLatLng.length - 1] : null;
   const mapCenter = startLatLng || DEFAULT_CENTER;
 
+  const userPointForTracking = useMemo(() => {
+    if (!routeLatLng.length) {
+      return null;
+    }
+    const pointIndex = Math.min(routeLatLng.length - 1, Math.max(0, currentStepIndex));
+    const point = routeLatLng[pointIndex];
+    return [point[1], point[0]];
+  }, [currentStepIndex, routeLatLng]);
+
+  const destinationPointForTracking = useMemo(() => {
+    if (!destinationLatLng) {
+      return null;
+    }
+    return [destinationLatLng[1], destinationLatLng[0]];
+  }, [destinationLatLng]);
+
   useEffect(() => {
     setCurrentStepIndex(0);
     setIsPaused(false);
@@ -252,6 +271,42 @@ export default function LiveNavScreen({ onStop, navigationData }) {
       window.speechSynthesis.cancel();
     };
   }, [currentStep, voiceEnabled]);
+
+  useEffect(() => {
+    if (!isAuthenticated || !authToken || !userPointForTracking || !destinationPointForTracking || routeLatLng.length < 2) {
+      return;
+    }
+
+    const interval = window.setInterval(async () => {
+      try {
+        await updateLiveLocation(
+          {
+            location: { type: 'Point', coordinates: userPointForTracking },
+          },
+          authToken
+        );
+
+        const reroute = await checkAndReroute(
+          {
+            userLocation: userPointForTracking,
+            destination: destinationPointForTracking,
+            currentRoute: routeLatLng.map((point) => [point[1], point[0]]),
+          },
+          authToken
+        );
+
+        if (reroute?.rerouted) {
+          setRerouteStatus('Hazard detected ahead. Backend generated a safer route.');
+        } else {
+          setRerouteStatus('Route remains safe. Live monitoring active.');
+        }
+      } catch (error) {
+        setRerouteStatus(error.message || 'Live reroute check failed temporarily.');
+      }
+    }, 8000);
+
+    return () => window.clearInterval(interval);
+  }, [authToken, destinationPointForTracking, isAuthenticated, routeLatLng, userPointForTracking]);
 
   const InstructionIcon = getInstructionIcon(currentStep?.type);
   const progressPercent = guidanceSteps.length > 1 ? (currentStepIndex / (guidanceSteps.length - 1)) * 100 : 0;
@@ -289,6 +344,15 @@ export default function LiveNavScreen({ onStop, navigationData }) {
         </MapContainer>
 
         <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/15 via-transparent to-black/20" />
+
+        <button
+          onClick={onReportIssue}
+          className="absolute right-4 top-4 z-20 inline-flex items-center gap-2 rounded-2xl bg-error text-on-error px-3 py-2 shadow-lg hover:opacity-95 active:scale-95 transition-all"
+          aria-label="Report obstacle during navigation"
+        >
+          <Flag className="w-4 h-4" />
+          <span className="text-xs font-black uppercase tracking-wider">Report</span>
+        </button>
       </div>
 
       <div className="w-full p-3 sm:p-4 flex flex-col gap-3 sm:gap-4">
@@ -332,6 +396,23 @@ export default function LiveNavScreen({ onStop, navigationData }) {
             </div>
           </div>
         </div>
+
+        {!isAuthenticated && (
+          <div className="w-full max-w-4xl mx-auto">
+            <div className="bg-error-container text-on-error-container rounded-2xl p-3 text-sm font-semibold flex items-center justify-between gap-3">
+              Login required for live auto-rerouting checks.
+              <button onClick={onRequireAuth} className="bg-error text-on-error px-3 py-2 rounded-xl text-xs font-bold">Open Login</button>
+            </div>
+          </div>
+        )}
+
+        {rerouteStatus && (
+          <div className="w-full max-w-4xl mx-auto">
+            <div className="bg-primary/10 text-primary rounded-2xl p-3 text-sm font-semibold border border-primary/30">
+              {rerouteStatus}
+            </div>
+          </div>
+        )}
 
         <div className="w-full max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
           <div className="glass-panel p-4 rounded-2xl shadow-sm">

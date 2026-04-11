@@ -5,3 +5,12 @@ python-dotenv
 flask
 flask-cors
 litellm
+flask-jwt-extended
+flask-socketio
+flask-limiter
+pymongo
+dnspython
+requests
+numpy
+scipy
+scikit-learn

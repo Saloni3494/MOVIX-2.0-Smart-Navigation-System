@@ -1,9 +1,29 @@
-import { Bolt, Gamepad2, Mic, Cpu, Brain, ChevronUp, ChevronLeft, ChevronDown, ChevronRight } from 'lucide-react';
+import { AlertTriangle, Brain, Cpu, Gamepad2, Mic, Radar, ShieldAlert } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { cn } from '../../lib/utils.js';
-import { useState } from 'react';
+import {
+  detectObstacles,
+  fetchHardwareSnapshot,
+  getInactivityStatus,
+  performSafetyCheck,
+  processVoiceInteraction,
+  recordUserActivity,
+  releaseEmergencyBrake,
+  triggerEmergencyBrake,
+} from '../../lib/api.js';
 
-export default function ModesScreen() {
+const DEFAULT_LOCATION = [73.8567, 18.5204];
+
+export default function ModesScreen({ authToken, isAuthenticated, onRequireAuth }) {
   const [activeMode, setActiveMode] = useState('remote');
+  const [hardware, setHardware] = useState(null);
+  const [safety, setSafety] = useState(null);
+  const [inactivity, setInactivity] = useState(null);
+  const [voiceInput, setVoiceInput] = useState('help me');
+  const [voiceResult, setVoiceResult] = useState(null);
+  const [aiResult, setAiResult] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const modes = [
     { id: 'remote', label: 'Remote', icon: Gamepad2 },
@@ -12,300 +32,311 @@ export default function ModesScreen() {
     { id: 'emg', label: 'EMG', icon: Brain },
   ];
 
+  const battery = hardware?.system?.batteryLevel ?? 0;
+  const emgCommand = hardware?.emgProcessed?.command || 'unknown';
+  const emgConfidence = hardware?.emgProcessed?.confidence ?? 0;
+  const emgSignal = hardware?.emg?.signalStrength ?? 0;
+  const modeLabel = hardware?.hardwareConnection?.mode || 'simulator';
+
+  const statusTone = useMemo(() => {
+    if (!safety?.safetyLevel) {
+      return 'text-primary';
+    }
+    if (safety.safetyLevel === 'critical') {
+      return 'text-error';
+    }
+    if (safety.safetyLevel === 'warning' || safety.safetyLevel === 'caution') {
+      return 'text-yellow-600';
+    }
+    return 'text-primary';
+  }, [safety]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!isAuthenticated || !authToken) {
+      setHardware(null);
+      setSafety(null);
+      setInactivity(null);
+      return () => {};
+    }
+
+    const load = async () => {
+      try {
+        const [snapshot, safetyStatus, inactivityStatus] = await Promise.all([
+          fetchHardwareSnapshot(authToken),
+          performSafetyCheck(authToken),
+          getInactivityStatus(authToken),
+        ]);
+
+        if (!cancelled) {
+          setHardware(snapshot);
+          setSafety(safetyStatus);
+          setInactivity(inactivityStatus);
+          setError('');
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError(err.message || 'Could not load control telemetry.');
+        }
+      }
+    };
+
+    load();
+    const interval = window.setInterval(load, 9000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [authToken, isAuthenticated]);
+
+  const withAuth = async (fn) => {
+    if (!isAuthenticated || !authToken) {
+      onRequireAuth();
+      throw new Error('Please login first.');
+    }
+    return fn();
+  };
+
+  const handleVoiceRun = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await withAuth(() =>
+        processVoiceInteraction(
+          {
+            transcript: voiceInput,
+            generateFeedback: true,
+          },
+          authToken
+        )
+      );
+      setVoiceResult(result);
+      await recordUserActivity({ activityType: 'voice_command' }, authToken);
+    } catch (err) {
+      setError(err.message || 'Voice interaction failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAiScan = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await withAuth(() =>
+        detectObstacles(
+          {
+            currentLocation: hardware?.gps?.coordinates || DEFAULT_LOCATION,
+            captureFrames: true,
+          },
+          authToken
+        )
+      );
+      setAiResult(result);
+    } catch (err) {
+      setError(err.message || 'AI scan failed.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmergencyBrake = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await withAuth(() => triggerEmergencyBrake({ reason: 'Manual demo emergency stop' }, authToken));
+      const safetyStatus = await performSafetyCheck(authToken);
+      setSafety(safetyStatus);
+    } catch (err) {
+      setError(err.message || 'Failed to trigger emergency brake.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleReleaseBrake = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      await withAuth(() => releaseEmergencyBrake(authToken));
+      const safetyStatus = await performSafetyCheck(authToken);
+      setSafety(safetyStatus);
+    } catch (err) {
+      setError(err.message || 'Failed to release brake.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="max-w-7xl mx-auto p-4 sm:p-6">
-      {/* Status Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6 mb-8 sm:mb-10">
-        <div className="lg:col-span-8 bg-surface-container-low rounded-3xl p-6 sm:p-8 flex flex-col sm:flex-row items-center justify-between shadow-sm border border-outline-variant/10 gap-6">
-          <div className="space-y-1 text-center sm:text-left">
-            <h2 className="text-primary font-headline text-xl sm:text-2xl font-bold tracking-tight">System Status</h2>
-            <p className="text-on-surface-variant font-medium text-sm sm:text-base">All components operating normally</p>
-          </div>
-          <div className="flex items-center gap-4 sm:gap-6">
-            <div className="flex flex-col items-end">
-              <span className="text-2xl sm:text-3xl font-black text-on-surface">94%</span>
-              <span className="text-[10px] sm:text-xs font-bold text-primary uppercase tracking-tighter">Battery</span>
-            </div>
-            <div className="w-20 sm:w-24 h-10 sm:h-12 bg-surface-container-highest rounded-2xl relative overflow-hidden flex items-end">
-              <div className="w-full bg-gradient-to-t from-primary to-primary-fixed-dim h-[94%] rounded-t-lg transition-all duration-500"></div>
-            </div>
-          </div>
+    <div className="max-w-6xl mx-auto p-4 sm:p-6 space-y-6">
+      {!isAuthenticated && (
+        <div className="bg-error-container text-on-error-container rounded-2xl p-4 text-sm font-semibold flex items-center justify-between gap-3">
+          Login required for live control telemetry.
+          <button onClick={onRequireAuth} className="bg-error text-on-error px-3 py-2 rounded-xl text-xs font-bold">
+            Open Login
+          </button>
         </div>
+      )}
 
-        <div className="lg:col-span-4 bg-primary text-on-primary rounded-3xl p-6 sm:p-8 flex flex-col justify-between shadow-[0px_12px_32px_rgba(0,94,83,0.15)] bg-gradient-to-br from-primary to-primary-container min-h-[160px]">
-          <div className="flex justify-between items-start">
-            <Bolt className="w-7 h-7 sm:w-8 sm:h-8" />
-            <div className="px-3 py-1 bg-white/20 backdrop-blur-md rounded-full text-[9px] sm:text-[10px] font-bold uppercase tracking-widest">Live</div>
-          </div>
-          <div>
-            <p className="text-xs sm:text-sm opacity-80 font-medium">Drive Range</p>
-            <p className="text-3xl sm:text-4xl font-black tracking-tighter">18.4 <span className="text-base sm:text-lg opacity-60">km</span></p>
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="rounded-2xl bg-surface-container p-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-outline">Hardware Mode</p>
+          <p className="text-lg font-black text-primary mt-2">{modeLabel}</p>
+        </div>
+        <div className="rounded-2xl bg-surface-container p-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-outline">Battery</p>
+          <p className="text-lg font-black text-primary mt-2">{battery}%</p>
+        </div>
+        <div className="rounded-2xl bg-surface-container p-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-outline">EMG Command</p>
+          <p className="text-lg font-black text-primary mt-2">{emgCommand}</p>
+        </div>
+        <div className="rounded-2xl bg-surface-container p-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-outline">Safety Level</p>
+          <p className={cn('text-lg font-black mt-2 uppercase', statusTone)}>{safety?.safetyLevel || 'unknown'}</p>
         </div>
       </div>
 
-      {/* Mode Selection */}
-      <section className="mb-8 sm:mb-12">
-        <div className="flex items-center justify-between mb-4 sm:mb-6">
-          <h3 className="text-lg sm:text-xl font-bold text-on-surface font-headline">Control Strategy</h3>
-          <span className="text-xs sm:text-sm font-medium text-outline">Switching takes 0.5s</span>
-        </div>
-        <div className="bg-surface-container-low p-1.5 sm:p-2 rounded-3xl sm:rounded-[2rem] grid grid-cols-2 lg:grid-cols-4 gap-2">
-          {modes.map((mode) => (
+      <div className="bg-surface-container-low p-2 rounded-3xl grid grid-cols-2 lg:grid-cols-4 gap-2">
+        {modes.map((mode) => (
+          <button
+            key={mode.id}
+            onClick={() => setActiveMode(mode.id)}
+            className={cn(
+              'py-3 px-4 rounded-2xl flex items-center justify-center gap-2 font-bold transition',
+              activeMode === mode.id ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
+            )}
+          >
+            <mode.icon className="w-4 h-4" /> {mode.label}
+          </button>
+        ))}
+      </div>
+
+      {error && <p className="text-sm font-semibold text-error">{error}</p>}
+
+      {activeMode === 'remote' && (
+        <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 space-y-4">
+          <h3 className="text-xl font-black text-on-surface">Remote + Safety Controls</h3>
+          <p className="text-sm text-outline">Use these controls in demo to show the safety subsystem works without hardware.</p>
+          <div className="flex flex-wrap gap-3">
             <button
-              key={mode.id}
-              onClick={() => setActiveMode(mode.id)}
-              className={cn(
-                "py-3 sm:py-4 px-4 sm:px-6 rounded-2xl sm:rounded-3xl flex items-center justify-center gap-2 sm:gap-3 transition-all duration-300 font-bold text-sm sm:text-base",
-                activeMode === mode.id
-                  ? "bg-primary text-on-primary shadow-lg scale-[1.02] sm:scale-105"
-                  : "text-on-surface-variant hover:bg-surface-container-high"
-              )}
+              disabled={loading}
+              onClick={handleEmergencyBrake}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-error text-on-error font-bold disabled:opacity-50"
             >
-              <mode.icon className="w-4 h-4 sm:w-5 sm:h-5" />
-              {mode.label}
+              <ShieldAlert className="w-4 h-4" /> Emergency Brake
             </button>
-          ))}
+            <button
+              disabled={loading}
+              onClick={handleReleaseBrake}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-primary text-on-primary font-bold disabled:opacity-50"
+            >
+              Release Brake
+            </button>
+            <button
+              disabled={loading}
+              onClick={handleAiScan}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-secondary text-on-secondary font-bold disabled:opacity-50"
+            >
+              <Radar className="w-4 h-4" /> Scan Obstacles
+            </button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">Inactivity</p>
+              <p className="text-sm font-semibold mt-2">{inactivity?.isInactive ? 'Inactive' : 'Active'}</p>
+              <p className="text-xs text-outline mt-1">Last activity: {inactivity?.timeSinceActivitySeconds ?? '--'}s ago</p>
+            </div>
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">AI Scan Result</p>
+              <p className="text-sm font-semibold mt-2">Detected: {aiResult?.detectedObstacles ?? '--'}</p>
+              <p className="text-xs text-outline mt-1">Frames: {aiResult?.totalFramesProcessed ?? '--'}</p>
+            </div>
+          </div>
         </div>
-      </section>
+      )}
 
-      {/* Main Interaction Canvas */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 items-stretch">
-        {/* Voice Control Mode */}
-        {activeMode === 'voice' && (
-          <div className="lg:col-span-2 bg-gradient-to-br from-surface-container-lowest to-surface-container-low rounded-[2.5rem] sm:rounded-[3rem] p-8 sm:p-12 flex flex-col items-center justify-center text-center shadow-md border border-primary/10 min-h-[400px] sm:min-h-[500px]">
-            <div className="mb-2 sm:mb-3">
-              <span className="inline-block px-4 py-2 bg-primary/10 text-primary text-xs font-bold uppercase tracking-widest rounded-full">Voice Recognition Active</span>
-            </div>
-            <div className="relative mb-8 sm:mb-12 mt-6 sm:mt-8">
-              <div className="absolute inset-0 bg-primary/15 rounded-full scale-[2] sm:scale-[2.2] blur-2xl animate-pulse"></div>
-              <div className="absolute inset-0 bg-primary/8 rounded-full scale-[2.8] sm:scale-[3.2] blur-3xl"></div>
-              <button className="w-28 h-28 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-primary via-primary-container to-primary-fixed-dim text-on-primary flex items-center justify-center shadow-2xl relative z-10 hover:scale-105 active:scale-95 transition-transform duration-200 border-2 border-primary-fixed-dim">
-                <Mic className="w-12 h-12 sm:w-16 sm:h-16" />
-              </button>
-            </div>
-            <h4 className="text-3xl sm:text-4xl font-black text-on-surface mb-3 font-headline">Listening...</h4>
-            <p className="text-on-surface-variant max-w-2xl mx-auto text-lg sm:text-xl font-medium mb-2">"Take me to the dining room"</p>
-            <p className="text-xs sm:text-sm text-on-surface-variant/60 font-medium">Confidence: 94%</p>
-            <div className="mt-10 sm:mt-14 w-full flex justify-center gap-2 sm:gap-3 px-8">
-              {[...Array(8)].map((_, i) => (
-                <div
-                  key={i}
-                  className="bg-gradient-to-t from-primary to-primary-fixed-dim rounded-full flex-1"
-                  style={{
-                    height: `${[20, 35, 60, 45, 75, 40, 55, 30][i]}px`,
-                    animationDelay: `${i * 0.08}s`,
-                    animation: `soundWave 0.4s ease-in-out infinite`
-                  }}
-                ></div>
-              ))}
-            </div>
-            <style>{`
-              @keyframes soundWave {
-                0%, 100% { opacity: 0.4; transform: scaleY(0.6); }
-                50% { opacity: 1; transform: scaleY(1); }
-              }
-            `}</style>
+      {activeMode === 'voice' && (
+        <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 space-y-4">
+          <h3 className="text-xl font-black text-on-surface">Voice Interaction</h3>
+          <p className="text-sm text-outline">Try commands like: help, stop, emergency, left, right.</p>
+          <div className="flex flex-col md:flex-row gap-3">
+            <input
+              value={voiceInput}
+              onChange={(e) => setVoiceInput(e.target.value)}
+              className="flex-1 rounded-xl bg-surface-container px-4 py-3 outline-none"
+              placeholder="Type a voice transcript"
+            />
+            <button
+              disabled={loading || !voiceInput.trim()}
+              onClick={handleVoiceRun}
+              className="inline-flex items-center justify-center gap-2 px-4 py-3 rounded-xl bg-primary text-on-primary font-bold disabled:opacity-50"
+            >
+              <Mic className="w-4 h-4" /> Run Voice
+            </button>
           </div>
-        )}
+          <div className="rounded-2xl bg-surface-container p-4 text-sm">
+            <p className="font-bold text-outline uppercase text-xs">Recognition</p>
+            <p className="mt-2">Command: <span className="font-black">{voiceResult?.command?.command || '--'}</span></p>
+            <p>Confidence: <span className="font-black">{voiceResult?.command?.confidence ?? '--'}</span></p>
+            <p className="mt-2">Audio Feedback: {voiceResult?.audioFeedback?.text || '--'}</p>
+          </div>
+        </div>
+      )}
 
-        {/* Remote Control Mode */}
-        {activeMode === 'remote' && (
-          <div className="lg:col-span-2 bg-gradient-to-br from-surface-container-low to-surface-container-high rounded-[2.5rem] sm:rounded-[3rem] p-8 sm:p-12 flex flex-col gap-10 shadow-md border border-outline-variant/20 min-h-[500px] sm:min-h-[600px]">
-            {/* Control Pad Section */}
-            <div className="space-y-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h5 className="text-lg sm:text-xl font-bold text-on-surface font-headline">Directional Control</h5>
-                  <p className="text-xs sm:text-sm text-on-surface-variant mt-1">Swipe or tap to navigate</p>
-                </div>
-                <div className="flex items-center gap-2 px-4 py-2 bg-primary/10 rounded-full">
-                  <div className="w-2 h-2 rounded-full bg-primary animate-pulse"></div>
-                  <span className="text-xs font-bold text-primary uppercase tracking-wider">Active</span>
-                </div>
-              </div>
-              
-              <div className="flex items-center justify-center py-8">
-                <div className="relative bg-gradient-to-br from-surface-container-highest to-surface-container-high rounded-[2rem] p-8 shadow-md border border-outline-variant/30">
-                  <div className="grid grid-cols-3 gap-4">
-                    <div className="col-start-2">
-                      <button className="w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-2xl sm:rounded-3xl shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-200 border border-primary-fixed-dim group">
-                        <ChevronUp className="w-8 h-8 sm:w-10 sm:h-10 group-active:translate-y-1 transition-transform" />
-                      </button>
-                      <p className="text-center text-xs font-bold text-on-surface-variant mt-2">Forward</p>
-                    </div>
-                    <div className="col-start-1 row-start-2">
-                      <button className="w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-2xl sm:rounded-3xl shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-200 border border-primary-fixed-dim group">
-                        <ChevronLeft className="w-8 h-8 sm:w-10 sm:h-10 group-active:translate-x-1 transition-transform" />
-                      </button>
-                      <p className="text-center text-xs font-bold text-on-surface-variant mt-2 col-start-1">Left</p>
-                    </div>
-                    <div className="col-start-2 row-start-2">
-                      <button className="w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center bg-gradient-to-br from-surface-container to-surface-container-high text-on-surface rounded-2xl sm:rounded-3xl shadow-md border border-outline-variant/40 hover:shadow-lg transition-all duration-200 cursor-default opacity-75">
-                        <div className="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-on-surface"></div>
-                      </button>
-                    </div>
-                    <div className="col-start-3 row-start-2">
-                      <button className="w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-2xl sm:rounded-3xl shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-200 border border-primary-fixed-dim group">
-                        <ChevronRight className="w-8 h-8 sm:w-10 sm:h-10 group-active:-translate-x-1 transition-transform" />
-                      </button>
-                      <p className="text-center text-xs font-bold text-on-surface-variant mt-2">Right</p>
-                    </div>
-                    <div className="col-start-2 row-start-3">
-                      <button className="w-18 h-18 sm:w-20 sm:h-20 flex items-center justify-center bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-2xl sm:rounded-3xl shadow-lg hover:shadow-xl hover:scale-110 active:scale-95 transition-all duration-200 border border-primary-fixed-dim group">
-                        <ChevronDown className="w-8 h-8 sm:w-10 sm:h-10 group-active:-translate-y-1 transition-transform" />
-                      </button>
-                      <p className="text-center text-xs font-bold text-on-surface-variant mt-2">Backward</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
+      {activeMode === 'auto' && (
+        <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 space-y-4">
+          <h3 className="text-xl font-black text-on-surface">Automatic Mode (Hybrid Intelligence)</h3>
+          <p className="text-sm text-outline">Live values below combine simulator hardware streams and backend safety intelligence.</p>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">Ultrasonic Distance</p>
+              <p className="text-lg font-black text-primary mt-2">{hardware?.ultrasonic?.distanceCm ?? '--'} cm</p>
             </div>
-
-            {/* Action Buttons */}
-            <div className="grid grid-cols-2 gap-4 sm:gap-6">
-              <button className="h-20 sm:h-24 bg-gradient-to-br from-primary to-primary-container text-on-primary rounded-2xl sm:rounded-3xl font-bold text-base sm:text-lg tracking-wide shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 border border-primary-fixed-dim">
-                Accept
-              </button>
-              <button className="h-20 sm:h-24 bg-gradient-to-br from-error-container to-error text-on-error rounded-2xl sm:rounded-3xl font-black text-lg sm:text-xl tracking-widest shadow-lg shadow-error/30 hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 border border-error-fixed-dim">
-                STOP
-              </button>
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">Obstacle Nearby</p>
+              <p className="text-lg font-black text-primary mt-2">{hardware?.ultrasonic?.isObstacleNearby ? 'Yes' : 'No'}</p>
             </div>
-
-            <div className="bg-primary/10 border border-primary/30 p-5 sm:p-6 rounded-2xl sm:rounded-3xl flex items-start gap-4">
-              <div className="relative flex h-5 w-5 flex-shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-5 w-5 bg-primary"></span>
-              </div>
-              <div>
-                <p className="font-bold text-primary text-base">Auto-navigation Enabled</p>
-                <p className="text-xs text-on-surface-variant mt-1">Optimal path selected via AI | ETA: 4 min 32 sec</p>
-              </div>
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">GPS</p>
+              <p className="text-sm font-black text-primary mt-2 break-words">
+                {Array.isArray(hardware?.gps?.coordinates) ? hardware.gps.coordinates.join(', ') : '--'}
+              </p>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Automatic Mode */}
-        {activeMode === 'auto' && (
-          <div className="lg:col-span-2 bg-gradient-to-br from-surface-container-lowest to-surface-container-low rounded-[2.5rem] sm:rounded-[3rem] p-8 sm:p-12 flex flex-col items-center justify-center shadow-md border border-primary/10 min-h-[450px] sm:min-h-[550px]">
-            <div className="mb-3">
-              <span className="inline-block px-4 py-2 bg-primary/10 text-primary text-xs font-bold uppercase tracking-widest rounded-full">AI Navigation Active</span>
+      {activeMode === 'emg' && (
+        <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-3xl p-6 space-y-4">
+          <h3 className="text-xl font-black text-on-surface">EMG Hands-free Control</h3>
+          <p className="text-sm text-outline">Processed EMG command from simulator pipeline.</p>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">Signal Strength</p>
+              <p className="text-lg font-black text-primary mt-2">{emgSignal}</p>
             </div>
-            <div className="relative mb-10 sm:mb-14 mt-6 sm:mt-8">
-              <div className="absolute inset-0 bg-primary/12 rounded-full scale-[2] sm:scale-[2.2] blur-2xl animate-pulse"></div>
-              <div className="absolute inset-0 bg-primary/6 rounded-full scale-[3] sm:scale-[3.2] blur-3xl"></div>
-              <button className="w-28 h-28 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-primary via-primary-container to-primary-fixed-dim text-on-primary flex items-center justify-center shadow-2xl relative z-10 hover:scale-105 active:scale-95 transition-transform duration-200 border-2 border-primary-fixed-dim">
-                <Cpu className="w-12 h-12 sm:w-16 sm:h-16" />
-              </button>
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">RMS</p>
+              <p className="text-lg font-black text-primary mt-2">{hardware?.emgProcessed?.rms ?? '--'}</p>
             </div>
-            <h4 className="text-3xl sm:text-4xl font-black text-on-surface mb-3 font-headline">Autonomous Control</h4>
-            <p className="text-on-surface-variant max-w-2xl mx-auto text-lg sm:text-xl font-medium mb-8">AI is navigating the device</p>
-            
-            <div className="w-full grid grid-cols-3 gap-4 sm:gap-6 mb-8">
-              <div className="bg-surface-container-high rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-center border border-outline-variant/20">
-                <p className="text-xs text-on-surface-variant uppercase tracking-wider font-bold">Speed</p>
-                <p className="text-2xl sm:text-3xl font-black text-primary mt-2">2.5 km/h</p>
-              </div>
-              <div className="bg-surface-container-high rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-center border border-outline-variant/20">
-                <p className="text-xs text-on-surface-variant uppercase tracking-wider font-bold">Distance</p>
-                <p className="text-2xl sm:text-3xl font-black text-primary mt-2">340 m</p>
-              </div>
-              <div className="bg-surface-container-high rounded-2xl sm:rounded-3xl p-4 sm:p-6 text-center border border-outline-variant/20">
-                <p className="text-xs text-on-surface-variant uppercase tracking-wider font-bold">ETA</p>
-                <p className="text-2xl sm:text-3xl font-black text-primary mt-2">2:15</p>
-              </div>
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">Command</p>
+              <p className="text-lg font-black text-primary mt-2 uppercase">{emgCommand}</p>
             </div>
-
-            <div className="mt-6 w-full flex justify-center gap-2 sm:gap-3 px-8">
-              {[...Array(12)].map((_, i) => (
-                <div
-                  key={i}
-                  className="bg-gradient-to-t from-primary to-primary-fixed-dim rounded-full flex-1 opacity-70"
-                  style={{
-                    height: `${[15, 25, 40, 35, 50, 45, 60, 50, 45, 40, 30, 20][i]}px`,
-                    animationDelay: `${i * 0.06}s`,
-                    animation: `processingWave 0.5s ease-in-out infinite`
-                  }}
-                ></div>
-              ))}
-            </div>
-            <style>{`
-              @keyframes processingWave {
-                0%, 100% { opacity: 0.4; }
-                50% { opacity: 1; }
-              }
-            `}</style>
-          </div>
-        )}
-
-        {/* EMG Control Mode */}
-        {activeMode === 'emg' && (
-          <div className="lg:col-span-2 bg-gradient-to-br from-surface-container-high to-surface-container-low rounded-[2.5rem] sm:rounded-[3rem] p-8 sm:p-12 overflow-hidden relative shadow-md border border-outline-variant/20 min-h-[500px] sm:min-h-[600px]">
-            <div className="absolute inset-0 opacity-5">
-              <div className="absolute top-0 left-1/4 w-96 h-96 bg-primary rounded-full blur-3xl"></div>
-              <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-primary-container rounded-full blur-3xl"></div>
-            </div>
-            
-            <div className="relative z-10">
-              <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-primary/15 rounded-2xl">
-                    <Brain className="w-8 h-8 text-primary" />
-                  </div>
-                  <div>
-                    <span className="text-lg sm:text-xl font-bold text-on-surface font-headline">EMG Signal Fidelity</span>
-                    <p className="text-xs sm:text-sm text-on-surface-variant mt-1">Neural signal monitoring</p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-3 px-4 py-2.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full">
-                  <div className="w-2.5 h-2.5 rounded-full bg-white animate-pulse"></div>
-                  <span className="text-white font-bold text-sm uppercase tracking-wider">Stable</span>
-                </div>
-              </div>
-
-              <div className="bg-surface-container-lowest rounded-2xl sm:rounded-3xl p-8 sm:p-10 mb-8 border border-outline-variant/20">
-                <p className="text-xs uppercase tracking-widest font-bold text-on-surface-variant mb-6">Signal Intensity Measurement</p>
-                <div className="h-40 sm:h-48 w-full flex items-end justify-between gap-1 sm:gap-1.5 relative">
-                  {[40, 70, 20, 90, 50, 75, 35, 65, 25, 95, 40, 70, 20, 90].map((h, i) => (
-                    <div
-                      key={i}
-                      className="flex-1 bg-gradient-to-t from-primary via-primary-container to-primary-fixed-dim rounded-t-lg emg-bar transition-all"
-                      style={{ 
-                        height: `${h}%`, 
-                        animationDelay: `${i * 0.1}s`,
-                        boxShadow: `0 0 ${Math.ceil(h/10)}px rgba(6, 182, 147, ${h/100})`
-                      }}
-                    ></div>
-                  ))}
-                  <div className="absolute inset-0 flex flex-col justify-between opacity-10 pointer-events-none">
-                    <div className="w-full border-t border-on-surface"></div>
-                    <div className="w-full border-t border-on-surface"></div>
-                    <div className="w-full border-t border-on-surface"></div>
-                  </div>
-                </div>
-                <div className="mt-6 flex justify-between items-center text-xs sm:text-sm font-bold text-on-surface-variant uppercase tracking-widest">
-                  <span>40 Hz</span>
-                  <span>Frequency Range</span>
-                  <span>250 Hz</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 sm:gap-6">
-                <div className="bg-surface-container-lowest rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-outline-variant/20">
-                  <p className="text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-2">Peak Amplitude</p>
-                  <p className="text-2xl sm:text-3xl font-black text-primary">95%</p>
-                  <p className="text-xs text-on-surface-variant mt-2 font-medium">Signal Quality</p>
-                </div>
-                <div className="bg-surface-container-lowest rounded-2xl sm:rounded-3xl p-5 sm:p-6 border border-outline-variant/20">
-                  <p className="text-xs text-on-surface-variant uppercase tracking-wider font-bold mb-2">Response Time</p>
-                  <p className="text-2xl sm:text-3xl font-black text-primary">120 ms</p>
-                  <p className="text-xs text-on-surface-variant mt-2 font-medium">Latency</p>
-                </div>
-              </div>
+            <div className="rounded-2xl bg-surface-container p-4">
+              <p className="text-xs font-bold uppercase text-outline">Confidence</p>
+              <p className="text-lg font-black text-primary mt-2">{emgConfidence}</p>
             </div>
           </div>
-        )}
-      </div>
+          <div className="inline-flex items-center gap-2 text-xs font-bold text-primary bg-primary/10 px-3 py-2 rounded-full">
+            <AlertTriangle className="w-4 h-4" /> Debounced: {hardware?.emgProcessed?.isDebounced ? 'Yes' : 'No'}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

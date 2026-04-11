@@ -1,13 +1,17 @@
 import { Compass, Accessibility, AlertTriangle, UserCircle } from 'lucide-react';
 import { cn } from '../lib/utils.js';
 
-export default function Sidebar({ currentScreen, onScreenChange, isOpen }) {
+export default function Sidebar({ currentScreen, onScreenChange, isOpen, user }) {
   const navItems = [
     { id: 'map', label: 'Navigation', icon: Compass },
     { id: 'modes', label: 'Control Modes', icon: Accessibility },
     { id: 'report', label: 'Report Issues', icon: AlertTriangle },
     { id: 'profile', label: 'Profile', icon: UserCircle },
   ];
+
+  if (user?.role === 'admin') {
+    navItems.splice(3, 0, { id: 'admin', label: 'Admin Dashboard', icon: Accessibility });
+  }
 
   return (
     <aside
@@ -24,8 +28,8 @@ export default function Sidebar({ currentScreen, onScreenChange, isOpen }) {
           referrerPolicy="no-referrer"
         />
         <div className="flex flex-col">
-          <span className="font-headline font-black text-teal-900 text-lg">NavAbility User</span>
-          <span className="text-slate-500 text-sm">Smart Wheelchair Active</span>
+          <span className="font-headline font-black text-teal-900 text-lg">{user?.name || 'NavAbility User'}</span>
+          <span className="text-slate-500 text-sm">{user?.role || 'Smart Wheelchair Active'}</span>
         </div>
       </div>
       <nav className="flex flex-col gap-2">
