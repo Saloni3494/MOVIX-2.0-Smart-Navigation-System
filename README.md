@@ -109,23 +109,12 @@ Open [http://localhost:3000](http://localhost:3000) to view the application.
    ```
    Sure! Starting from your current location, head north on Main Street for 300 meters...
    ```
-
-## 🤝 Contributing
-
-We welcome contributions! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on submitting issues, feature requests, or pull requests.
-
+   
 ## 🔒 License
 
 This project is licensed under the [MIT License](LICENSE).
 
-## 📣 Acknowledgments
-
-- OpenAI for LLM APIs
-- [Your choice of map provider]
-- Contributors & the open-source community
 
 ---
-
-**NavAbility** – Empowering smarter, more accessible, and human-centric navigation with LLMs!
 
 **NavAbility** – Empowering smarter, more accessible, and human-centric navigation with LLMs!
