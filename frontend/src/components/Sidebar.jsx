@@ -1,8 +1,9 @@
-import { Compass, Accessibility, AlertTriangle, UserCircle } from 'lucide-react';
+import { Accessibility, AlertTriangle, Compass, LayoutDashboard, UserCircle } from 'lucide-react';
 import { cn } from '../lib/utils.js';
 
 export default function Sidebar({ currentScreen, onScreenChange, isOpen, user }) {
   const navItems = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
     { id: 'map', label: 'Navigation', icon: Compass },
     { id: 'modes', label: 'Control Modes', icon: Accessibility },
     { id: 'report', label: 'Report Issues', icon: AlertTriangle },

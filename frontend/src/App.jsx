@@ -10,6 +10,7 @@ import ReportScreen from './components/screens/ReportScreen.jsx';
 import LiveNavScreen from './components/screens/LiveNavScreen.jsx';
 import ProfileScreen from './components/screens/ProfileScreen.jsx';
 import AdminScreen from './components/screens/AdminScreen.jsx';
+import OverviewScreen from './components/screens/OverviewScreen.jsx';
 import { cn } from './lib/utils.js';
 import {
   loginUser,
@@ -36,7 +37,7 @@ function mapBackendRouteToNavigation(routePayload, fallbackUserLocation) {
 }
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState('map');
+  const [currentScreen, setCurrentScreen] = useState('overview');
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
   const [navigationData, setNavigationData] = useState(null);
@@ -251,6 +252,16 @@ export default function App() {
                   onStartNavigation={handleStartNavigation}
                   authToken={authToken}
                   user={user}
+                  onRequireAuth={() => setCurrentScreen('profile')}
+                />
+              )}
+              {currentScreen === 'overview' && (
+                <OverviewScreen
+                  authToken={authToken}
+                  isAuthenticated={isAuthenticated}
+                  user={user}
+                  onScreenChange={handleScreenChange}
+                  onStartNavigation={handleStartNavigation}
                   onRequireAuth={() => setCurrentScreen('profile')}
                 />
               )}

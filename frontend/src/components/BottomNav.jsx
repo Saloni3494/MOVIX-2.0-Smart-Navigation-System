@@ -1,8 +1,9 @@
-import { Map as MapIcon, Gamepad2, AlertCircle, User } from 'lucide-react';
+import { AlertCircle, Gamepad2, LayoutDashboard, Map as MapIcon, User } from 'lucide-react';
 import { cn } from '../lib/utils.js';
 
 export default function BottomNav({ currentScreen, onScreenChange, user }) {
   const navItems = [
+    { id: 'overview', label: 'Home', icon: LayoutDashboard },
     { id: 'map', label: 'Map', icon: MapIcon },
     { id: 'modes', label: 'Modes', icon: Gamepad2 },
     { id: 'report', label: 'Report', icon: AlertCircle },

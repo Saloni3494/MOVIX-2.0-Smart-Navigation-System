@@ -32,10 +32,20 @@ export default function WheelchairSimulator({ routeLatLng, isPaused, onPositionU
   useEffect(() => {
     if (!routeLatLng || routeLatLng.length < 2) return;
     
-    // Reset if new route is vastly different
-    routeIndexRef.current = 0;
-    positionRef.current = routeLatLng[0];
-    setCurrentPos(routeLatLng[0]);
+    const routeId = routeLatLng[0].join(',') + '_' + routeLatLng[routeLatLng.length-1].join(',');
+    const cachedStateStr = sessionStorage.getItem('simState_' + routeId);
+
+    if (cachedStateStr) {
+      const cached = JSON.parse(cachedStateStr);
+      routeIndexRef.current = cached.index;
+      positionRef.current = cached.pos;
+      setCurrentPos(cached.pos);
+    } else {
+      routeIndexRef.current = 0;
+      positionRef.current = routeLatLng[0];
+      setCurrentPos(routeLatLng[0]);
+    }
+    
     hasNotifiedEndRef.current = false;
     lastTimeRef.current = null;
   }, [routeLatLng]);
@@ -100,16 +110,21 @@ export default function WheelchairSimulator({ routeLatLng, isPaused, onPositionU
 
   // Sync position updates periodically back to parent component so it can trigger APIs, AI scans, etc.
   useEffect(() => {
-    if (isPaused) return;
+    if (isPaused || !routeLatLng || routeLatLng.length < 2) return;
     
     const interval = setInterval(() => {
         if (positionRef.current && !hasNotifiedEndRef.current) {
+            const routeId = routeLatLng[0].join(',') + '_' + routeLatLng[routeLatLng.length-1].join(',');
+            sessionStorage.setItem('simState_' + routeId, JSON.stringify({
+                index: routeIndexRef.current,
+                pos: positionRef.current
+            }));
             onPositionUpdate({ position: positionRef.current, reachedEnd: false, index: routeIndexRef.current });
         }
     }, 2000); // 2 second cadence checks
     
     return () => clearInterval(interval);
-  }, [isPaused, onPositionUpdate]);
+  }, [isPaused, onPositionUpdate, routeLatLng]);
 
   // Keep map continuously centered on the user during simulation
   useEffect(() => {
