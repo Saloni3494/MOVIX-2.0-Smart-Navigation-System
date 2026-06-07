@@ -4,8 +4,9 @@ import { cn } from '../lib/utils.js';
 export default function Sidebar({ currentScreen, onScreenChange, isOpen, user }) {
   const navItems = [
     { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-    { id: 'map', label: 'Navigation', icon: Compass },
-    { id: 'modes', label: 'Control Modes', icon: Accessibility },
+    { id: 'map', label: 'Smart Navigation', icon: Compass },
+    { id: 'bci', label: 'BCI Dashboard', icon: Accessibility },
+    { id: 'speller', label: 'EEG Speller', icon: UserCircle },
     { id: 'report', label: 'Report Issues', icon: AlertTriangle },
     { id: 'profile', label: 'Profile', icon: UserCircle },
   ];
@@ -29,8 +30,8 @@ export default function Sidebar({ currentScreen, onScreenChange, isOpen, user })
           referrerPolicy="no-referrer"
         />
         <div className="flex flex-col">
-          <span className="font-headline font-black text-teal-900 text-lg">{user?.name || 'NavAbility User'}</span>
-          <span className="text-slate-500 text-sm">{user?.role || 'Smart Wheelchair Active'}</span>
+          <span className="font-headline font-black text-teal-900 text-lg">{user?.name || 'MOVIX User'}</span>
+          <span className="text-slate-500 text-sm">{user?.role || 'Brain-Controlled Mode Active'}</span>
         </div>
       </div>
       <nav className="flex flex-col gap-2">

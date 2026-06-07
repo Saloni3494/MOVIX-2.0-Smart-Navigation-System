@@ -11,7 +11,7 @@ def init_socketio(app):
 
 @socketio.on("connect")
 def handle_connect():
-    emit("connection_ack", {"message": "Connected to NavAbility socket server"})
+    emit("connection_ack", {"message": "Connected to MOVIX socket server"})
 
 
 @socketio.on("join_room")

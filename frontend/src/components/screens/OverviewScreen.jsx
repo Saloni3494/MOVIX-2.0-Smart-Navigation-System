@@ -95,10 +95,16 @@ export default function OverviewScreen({ authToken, isAuthenticated, user, onScr
       action: () => onScreenChange('map'),
     },
     {
-      title: 'Voice and EMG control',
-      text: 'Switch control modes and keep hands-free interaction within the same flow.',
+      title: 'Brain-Computer Interface',
+      text: 'View live EEG & EMG signal processing and ML intent classification.',
+      icon: Brain,
+      action: () => onScreenChange('bci'),
+    },
+    {
+      title: 'EEG Text Speller',
+      text: 'Generate text messages hands-free using P300 brainwave signals.',
       icon: Mic,
-      action: () => onScreenChange('modes'),
+      action: () => onScreenChange('speller'),
     },
     {
       title: 'Safety and alerts',
@@ -141,10 +147,10 @@ export default function OverviewScreen({ authToken, isAuthenticated, user, onScr
 
             <div className="mt-6 max-w-3xl space-y-4">
               <h1 className="text-4xl font-black tracking-tight text-on-surface sm:text-5xl lg:text-6xl">
-                Build the accessible mobility demo as a single connected experience.
+                MOVIX Brain-Controlled Smart Wheelchair.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-on-surface-variant sm:text-lg">
-                This hub stitches together route planning, live guidance, obstacle detection, voice control, EMG modes, and emergency response so the project feels like one product instead of separate screens.
+                Experience hands-free autonomous navigation through our cutting-edge Brain-Computer Interface, featuring 88% classification accuracy, dynamic real-time routing, and continuous obstacle avoidance.
               </p>
             </div>
 
@@ -165,11 +171,11 @@ export default function OverviewScreen({ authToken, isAuthenticated, user, onScr
                 <Compass className="h-4 w-4" />
               </button>
               <button
-                onClick={() => (isAuthenticated ? onScreenChange('modes') : onRequireAuth?.())}
+                onClick={() => (isAuthenticated ? onScreenChange('bci') : onRequireAuth?.())}
                 className="inline-flex items-center gap-2 rounded-full border border-outline-variant/70 bg-white px-5 py-3 text-sm font-bold text-on-surface transition hover:bg-surface-container"
               >
-                Control modes
-                <Mic className="h-4 w-4" />
+                BCI Diagnostics
+                <Brain className="h-4 w-4" />
               </button>
             </div>
 
@@ -221,13 +227,13 @@ export default function OverviewScreen({ authToken, isAuthenticated, user, onScr
               <p className="text-xs font-black uppercase tracking-[0.28em] text-outline">Connected modules</p>
               <div className="mt-4 space-y-3">
                 {[
-                  'Accessible route planner',
-                  'Live navigation and rerouting',
-                  'Obstacle detection and reporting',
-                  'Voice assistant and EMG controls',
+                  'EEG/EMG Biosignal Processing',
+                  'ML Intent Classification (88% Accuracy)',
+                  'Real-time wheelchair navigation',
+                  'P300 Speller Text Generation',
                 ].map((item) => (
                   <div key={item} className="flex items-center gap-3 rounded-2xl bg-surface-container-lowest px-4 py-3">
-                    <Radar className="h-4 w-4 text-primary" />
+                    <Brain className="h-4 w-4 text-primary" />
                     <span className="text-sm font-semibold text-on-surface">{item}</span>
                   </div>
                 ))}

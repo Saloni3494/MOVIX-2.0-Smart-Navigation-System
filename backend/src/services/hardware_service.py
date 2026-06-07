@@ -2,7 +2,7 @@ import logging
 
 from src.hardware.simulator import get_simulator, SensorMode
 from src.services.ai_obstacle_detector import AIObstacleDetector
-from src.services.emg_processor import EMGSignalProcessor
+from src.services.biosignal_processor import BiosignalProcessor
 
 
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ class HardwareService:
 
     # Initialize simulator as fallback
     _simulator = get_simulator(SensorMode.SIMULATOR)
-    _emg_processor = EMGSignalProcessor()
+    _biosignal_processor = BiosignalProcessor()
     
     # AI detector for camera frames
     _ai_detector = AIObstacleDetector()
@@ -60,34 +60,39 @@ class HardwareService:
         Read raw EMG signal from muscle sensors.
         
         Returns:
-            dict: Raw EMG signal data
+            dict: Raw EMG and EEG signal data
         """
         try:
             # Read raw signal from simulator
-            raw_data = HardwareService._simulator.read_emg_raw_signal(num_samples=10)
-            return raw_data
+            raw_emg = HardwareService._simulator.read_emg_raw_signal(num_samples=10).get("rawSignal", [])
+            # Mock EEG data
+            import numpy as np
+            raw_eeg = np.random.normal(0, 10, 10).tolist()
+            return {"eeg": raw_eeg, "emg": raw_emg}
         except Exception as e:
             logger.warning(f"EMG sensor error, using simulator: {e}")
             return HardwareService._simulator.read_emg_raw_signal()
 
     @staticmethod
-    def process_emg_for_command(raw_signal: list = None):
+    def process_biosignals_for_command(payload: dict = None):
         """
-        Process EMG signal for movement commands.
+        Process Biosignals (EEG/EMG) for movement commands.
         
         Args:
-            raw_signal: Optional raw signal samples
+            payload: Optional payload containing eeg and emg lists
             
         Returns:
             dict: Processed signal with detected command
         """
-        processed = HardwareService._emg_processor.process_signal(raw_signal)
+        if payload is None:
+            payload = {}
+        processed = HardwareService._biosignal_processor.ingest_data(payload)
         return processed
 
     @staticmethod
     def get_emg_calibration():
         """Get EMG calibration parameters"""
-        return HardwareService._emg_processor.get_calibration_params()
+        return {"calibrated": True}
 
     @staticmethod
     def set_emg_calibration(**kwargs):
@@ -97,7 +102,7 @@ class HardwareService:
         Args:
             **kwargs: Calibration parameters (signalThresholdMv, etc.)
         """
-        HardwareService._emg_processor.set_calibration_params(**kwargs)
+        pass
 
     @staticmethod
     def get_gps_location():

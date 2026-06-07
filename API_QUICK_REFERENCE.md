@@ -1,4 +1,4 @@
-# NavAbility API Quick Reference
+# MOVIX API Quick Reference
 
 ## Authentication
 All endpoints require JWT token in Authorization header:
@@ -435,7 +435,7 @@ GET /api/hardware/snapshot
 Response:
 {
   "ultrasonic": {"distanceCm": 45.2, "isObstacleNearby": true},
-  "emg": {"signalStrength": 0.62, "command": "forward"},
+  "biosignals": {"signalStrength": 0.62, "command": "forward"},
   "gps": {"type": "Point", "coordinates": [73.856, 18.520]}
 }
 ```

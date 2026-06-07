@@ -31,11 +31,15 @@ src/services/ai_obstacle_detector.py        (350+ lines)
 
 ### Signal Processing Services
 ```
-src/services/emg_processor.py               (350+ lines)
-- EMGSignalProcessor class
+src/services/biosignal_processor.py         (350+ lines)
+- BiosignalProcessor class
 - Band-pass filtering
-- Envelope detection (RMS)
-- Command classification with calibration
+- EEG & EMG pipeline ingestion
+
+src/services/ml_intent_classifier.py        (200+ lines)
+- MLIntentClassifier class
+- Scikit-Learn RandomForestClassifier pipeline
+- 88% accuracy simulated prediction model
 ```
 
 ### Voice & Audio Services

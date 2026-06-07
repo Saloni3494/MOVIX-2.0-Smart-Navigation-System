@@ -5,7 +5,8 @@ import Sidebar from './components/Sidebar.jsx';
 import TopBar from './components/TopBar.jsx';
 import BottomNav from './components/BottomNav.jsx';
 import MapScreen from './components/screens/MapScreen.jsx';
-import ModesScreen from './components/screens/ModesScreen.jsx';
+import BCIDashboardScreen from './components/screens/BCIDashboardScreen.jsx';
+import EEGSpellerScreen from './components/screens/EEGSpellerScreen.jsx';
 import ReportScreen from './components/screens/ReportScreen.jsx';
 import LiveNavScreen from './components/screens/LiveNavScreen.jsx';
 import ProfileScreen from './components/screens/ProfileScreen.jsx';
@@ -265,8 +266,11 @@ export default function App() {
                   onRequireAuth={() => setCurrentScreen('profile')}
                 />
               )}
-              {currentScreen === 'modes' && (
-                <ModesScreen authToken={authToken} isAuthenticated={isAuthenticated} onRequireAuth={() => setCurrentScreen('profile')} />
+              {currentScreen === 'bci' && (
+                <BCIDashboardScreen authToken={authToken} isAuthenticated={isAuthenticated} onRequireAuth={() => setCurrentScreen('profile')} />
+              )}
+              {currentScreen === 'speller' && (
+                <EEGSpellerScreen isAuthenticated={isAuthenticated} onRequireAuth={() => setCurrentScreen('profile')} />
               )}
               {currentScreen === 'report' && (
                 <ReportScreen

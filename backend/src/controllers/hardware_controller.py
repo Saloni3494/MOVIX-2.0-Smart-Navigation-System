@@ -6,14 +6,14 @@ from src.services.hardware_service import HardwareService
 
 @jwt_required()
 def get_hardware_snapshot():
-    emg_raw = HardwareService.read_emg_signal()
-    emg_processed = HardwareService.process_emg_for_command(emg_raw.get("rawSignal", []))
+    biosignals_raw = HardwareService.read_emg_signal()
+    emg_processed = HardwareService.process_biosignals_for_command(biosignals_raw)
 
     return jsonify(
         {
             "ultrasonic": HardwareService.read_ultrasonic_sensor(),
-            "emg": emg_raw,
-            "emgProcessed": emg_processed,
+            "biosignals": biosignals_raw,
+            "biosignalsProcessed": emg_processed,
             "gps": HardwareService.get_gps_location(),
             "system": HardwareService.get_system_status(),
             "hardwareConnection": HardwareService.check_hardware_connection(),

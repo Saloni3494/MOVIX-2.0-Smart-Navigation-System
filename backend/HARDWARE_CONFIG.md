@@ -58,13 +58,15 @@ AI_DETECTION_CLASSES = [
     "blocked_road", "construction", "spill", "debris", "vehicle"
 ]
 
-# --- EMG SIGNAL PROCESSING ---
+# --- BIOSIGNAL (BCI) PROCESSING ---
+# Supported Hardware: OpenBCI Cyton, NeuroSky MindWave, custom ESP32 + AD8232
+EEG_SAMPLE_RATE_HZ = 250
 EMG_SAMPLE_RATE_HZ = 1000
-EMG_FILTER_LOW_HZ = 20
-EMG_FILTER_HIGH_HZ = 500
-EMG_SIGNAL_THRESHOLD_MV = 2.0  # Activation threshold
-EMG_DEBOUNCE_SAMPLES = 5  # Noise immunity
-COMMANDS_BY_SIGNAL = {
+SIGNAL_FILTER_LOW_HZ = 0.5  # Delta waves start
+SIGNAL_FILTER_HIGH_HZ = 50.0 # Remove mains noise
+BCI_SIGNAL_THRESHOLD_MV = 1.5  # Activation threshold for intent
+BCI_DEBOUNCE_SAMPLES = 5  # Noise immunity for classification
+INTENT_CLASSIFICATION_WEIGHTS = {
     "forward": 0.35,
     "left": 0.20,
     "right": 0.20,
@@ -137,10 +139,14 @@ DEMO_SCENARIOS = {
         "expected_response": "audio_feedback",
     },
     "emg_control": {
-        "description": "User controls wheelchair via EMG signals",
+        "description": "User controls wheelchair via BCI (EEG/EMG) signals",
         "emg_command": "forward",
         "expected_action": "movement_command",
     },
+    "p300_speller": {
+        "description": "User generates text via EEG P300 Speller",
+        "expected_action": "text_generation",
+    }
 }
 
 # ============================================================================
